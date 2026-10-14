@@ -169,6 +169,29 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .menu-list button:hover, .menu-list button:focus-visible { background: var(--surface-2); }
 .menu-list b { font-weight: 600; font-size: 13px; }
 .menu-list small { color: var(--muted); font-size: 12px; }
+/* Set by JS when opening to the left would run off the screen */
+.menu.align-left .menu-list { right: auto; left: 0; }
+
+/* Phones: the bar wraps and the button can sit anywhere, so open the
+   menu as a sheet along the bottom of the screen instead */
+@media (max-width: 560px) {
+  .menu-list,
+  .menu.align-left .menu-list {
+    position: fixed; top: auto; z-index: 50; min-width: 0;
+    left: max(12px, env(safe-area-inset-left, 0px));
+    right: max(12px, env(safe-area-inset-right, 0px));
+    bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+    padding: 8px; border-radius: 14px;
+    box-shadow: 0 -4px 40px rgba(10, 14, 30, .3);
+  }
+  .menu-list button { padding: 12px; }
+  .menu-list b { font-size: 14px; }
+  /* Dimmed backdrop; tapping it closes the menu */
+  .menu[open] > summary::before {
+    content: ""; position: fixed; inset: 0; z-index: 40; cursor: default;
+    background: rgba(10, 14, 30, .45);
+  }
+}
 
 @media (max-width: 560px) {
   .btn.back span { display: none; }

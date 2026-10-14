@@ -156,6 +156,15 @@
     var m = e.target.closest("details.menu");
     closeMenus(m);
   });
+  // Open the menu towards whichever side has room
+  document.addEventListener("toggle", function (e) {
+    var m = e.target;
+    if (!m.classList || !m.classList.contains("menu") || !m.open) return;
+    m.classList.remove("align-left");
+    var r = m.querySelector(".menu-list").getBoundingClientRect();
+    if (r.left < 8) m.classList.add("align-left");
+  }, true);
+  document.addEventListener("keydown", function (e) { if (e.key === "Escape") closeMenus(); });
 
   /* =====================================================
      Router
