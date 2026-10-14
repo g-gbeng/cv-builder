@@ -1,24 +1,27 @@
 /* =========================================================
-   Folio CV Builder – application logic
-   State -> editor form + live preview + exports.
-   Depends on js/templates.js (window.CVTemplates).
+   Folio CV Builder – application
+   Three screens, switched by the URL hash:
+     #/            My CVs (library)
+     #/edit/<id>   editor with live preview
+     #/view/<id>   read-only view
+   Depends on templates.js, store.js and export.js.
    ========================================================= */
 (function () {
   "use strict";
 
-  var T = window.CVTemplates;
+  var T = window.CVTemplates, Store = window.CVStore, X = window.CVExport;
   var TEMPLATES = T.list, cvHTML = T.cvHTML;
   var esc = T.helpers.esc, items = T.helpers.items, exps = T.helpers.exps, edus = T.helpers.edus;
-
-  /* ---------- Constants ---------- */
-  var PAGE_W = 794, PAGE_H = 1123, MARGIN = 44;   // A4 in CSS px at 96dpi
-  var STORE_KEY = "folio-cv-draft-v1";
+  var PAGE_W = X.PAGE_W;
   var SWATCHES = ["#2F49D1", "#0F766E", "#9F1239", "#B45309", "#1F2937", "#6D28D9"];
 
+  /* =====================================================
+     CV data
+     ===================================================== */
   function blankExp() { return { role: "", company: "", location: "", start: "", end: "", current: false, bullets: "" }; }
   function blankEdu() { return { degree: "", school: "", location: "", start: "", end: "", details: "" }; }
 
-  function emptyState() {
+  function emptyData() {
     return {
       template: "meridian", accent: SWATCHES[0],
       personal: { name: "", title: "", email: "", phone: "", location: "", website: "", linkedin: "", photo: "" },
@@ -27,7 +30,7 @@
     };
   }
 
-  function exampleState() {
+  function exampleData() {
     return {
       template: "meridian", accent: SWATCHES[0], isExample: true,
       personal: {
@@ -53,76 +56,351 @@
     };
   }
 
-  /* ---------- State & persistence ---------- */
-  var state = loadDraft() || exampleState();
-  var openSections = { tpl: true, personal: true, summary: false, experience: false, education: false, skills: false };
-
+  // Fill in anything missing so older or imported data always has every field
   function normalise(d) {
-    if (!d || typeof d !== "object") return null;
-    var out = Object.assign(emptyState(), d);
-    out.personal = Object.assign(emptyState().personal, d.personal || {});
+    if (!d || typeof d !== "object" || !d.personal) return null;
+    var out = Object.assign(emptyData(), d);
+    out.personal = Object.assign(emptyData().personal, d.personal || {});
     out.experience = Array.isArray(d.experience) && d.experience.length ? d.experience.map(function (x) { return Object.assign(blankExp(), x); }) : [blankExp()];
     out.education = Array.isArray(d.education) && d.education.length ? d.education.map(function (x) { return Object.assign(blankEdu(), x); }) : [blankEdu()];
     if (!TEMPLATES.some(function (t) { return t.id === out.template; })) out.template = TEMPLATES[0].id;
     if (!/^#[0-9a-f]{6}$/i.test(out.accent)) out.accent = SWATCHES[0];
     ["summary", "skills", "languages", "certifications"].forEach(function (k) { out[k] = String(out[k] || ""); });
+    delete out.cvName;
     return out;
   }
-  function loadDraft() {
-    try {
-      var raw = localStorage.getItem(STORE_KEY);
-      return raw ? normalise(JSON.parse(raw)) : null;
-    } catch (e) { return null; }
-  }
-  var saveTimer = null;
-  function saveDraft() {
-    clearTimeout(saveTimer);
-    saveTimer = setTimeout(function () {
-      try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); }
-      catch (e) { /* storage full or blocked – the app still works */ }
-    }, 400);
-  }
 
-  function slug(s) {
-    return (String(s || "my").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "my") + "-cv";
-  }
   function tplName(id) { return TEMPLATES.filter(function (x) { return x.id === id; })[0].name; }
 
-  /* ---------- Page breaks ----------
-     Measured in unscaled CSS px. Pages after the first get a top margin,
-     every page keeps a bottom margin. A break never cuts through a .keep
-     block or leaves a heading stranded at the foot of a page. */
-  function computeBreaks(cvEl, scale) {
-    var root = cvEl.getBoundingClientRect();
-    var total = root.height / scale;
-    function rel(el) {
-      var r = el.getBoundingClientRect();
-      return { top: (r.top - root.top) / scale, bottom: (r.bottom - root.top) / scale };
-    }
-    var keeps = Array.prototype.map.call(cvEl.querySelectorAll(".keep"), rel);
-    var heads = Array.prototype.map.call(cvEl.querySelectorAll("h2"), rel);
-    var breaks = [0], y = 0, page = 0, guard = 0;
-    while (guard++ < 40) {
-      var usable = PAGE_H - MARGIN - (page > 0 ? MARGIN : 0);
-      if (total - y <= usable + (page === 0 ? MARGIN : 0)) break;
-      var b = y + usable;
-      keeps.forEach(function (k) { if (k.top < b && k.bottom > b && k.top > y + 80) b = Math.min(b, k.top); });
-      heads.forEach(function (k) { if (k.top < b && k.bottom > b - 70 && k.top > y + 80) b = Math.min(b, k.top); });
-      breaks.push(b); y = b; page++;
-    }
-    breaks.push(total);
-    return breaks;
+  /* =====================================================
+     Shared UI bits
+     ===================================================== */
+  var $ = function (id) { return document.getElementById(id); };
+  var views = { library: $("libraryView"), editor: $("editorView"), viewer: $("viewerView") };
+  function showView(name) {
+    Object.keys(views).forEach(function (k) { views[k].hidden = k !== name; });
+    closeMenus();
   }
 
-  /* ---------- Editor ---------- */
-  var ed = document.getElementById("editorInner");
-  var editorEl = document.getElementById("editor");
+  var toastEl = $("toast"), toastT = null;
+  function toast(msg) {
+    toastEl.textContent = msg;
+    toastEl.hidden = false;
+    clearTimeout(toastT);
+    toastT = setTimeout(function () { toastEl.hidden = true; }, 3600);
+  }
+
+  var rtf = window.Intl && Intl.RelativeTimeFormat ? new Intl.RelativeTimeFormat("en", { numeric: "auto" }) : null;
+  function ago(ts) {
+    var s = (ts - Date.now()) / 1000;
+    if (Math.abs(s) < 45) return "just now";
+    var units = [["year", 31536000], ["month", 2592000], ["week", 604800], ["day", 86400], ["hour", 3600], ["minute", 60]];
+    for (var i = 0; i < units.length; i++) {
+      if (Math.abs(s) >= units[i][1] || units[i][0] === "minute") {
+        return rtf ? rtf.format(Math.round(s / units[i][1]), units[i][0]) : new Date(ts).toLocaleDateString();
+      }
+    }
+  }
+
+  // Scale every .thumb's inner page to the thumb's width
+  function fitThumbs(root) {
+    Array.prototype.forEach.call((root || document).querySelectorAll(".thumb"), function (th) {
+      if (th.firstChild && th.clientWidth) th.firstChild.style.transform = "scale(" + th.clientWidth / PAGE_W + ")";
+    });
+  }
+
+  // Lay out a scaled A4 sheet with page-break markers
+  function layoutSheet(pane, wrap, sheet, meta) {
+    var s = Math.min(1, (pane.clientWidth - 32) / PAGE_W);
+    var cv = sheet.querySelector(".cv");
+    if (s <= 0 || !cv) return;
+    sheet.style.transform = "scale(" + s + ")";
+    Array.prototype.forEach.call(sheet.querySelectorAll(".pb"), function (n) { n.remove(); });
+    var breaks = X.computeBreaks(cv, s);
+    var total = breaks[breaks.length - 1];
+    wrap.style.width = PAGE_W * s + "px";
+    wrap.style.height = total * s + "px";
+    for (var i = 1; i < breaks.length - 1; i++) {
+      var m = document.createElement("div");
+      m.className = "pb";
+      m.style.top = breaks[i] + "px";
+      m.innerHTML = "<span>Page " + (i + 1) + "</span>";
+      sheet.appendChild(m);
+    }
+    var pages = breaks.length - 1;
+    var tid = (cv.className.match(/t-(\w+)/) || [])[1];
+    meta.innerHTML = "<span><strong>" + (tid ? tplName(tid) : "") + "</strong> template · A4</span><span>" +
+      pages + (pages === 1 ? " page" : " pages") + " · " + Math.round(s * 100) + "% zoom</span>";
+  }
+
+  // Confirmation dialog -> Promise<boolean>
+  var confirmDlg = $("confirmDialog");
+  function confirmBox(title, msg, okLabel) {
+    $("confirmTitle").textContent = title;
+    $("confirmMsg").textContent = msg;
+    $("confirmOk").textContent = okLabel || "Delete";
+    confirmDlg.returnValue = "";
+    confirmDlg.showModal();
+    return new Promise(function (resolve) {
+      confirmDlg.addEventListener("close", function onClose() {
+        confirmDlg.removeEventListener("close", onClose);
+        resolve(confirmDlg.returnValue === "ok");
+      });
+    });
+  }
+
+  function closeMenus(except) {
+    Array.prototype.forEach.call(document.querySelectorAll("details.menu[open]"), function (m) { if (m !== except) m.open = false; });
+  }
+  document.addEventListener("click", function (e) {
+    var m = e.target.closest("details.menu");
+    closeMenus(m);
+  });
+
+  /* =====================================================
+     Router
+     ===================================================== */
+  var current = { id: null, data: null };   // the CV open in the editor or viewer
+
+  function route() {
+    flushSave();
+    var h = location.hash, m;
+    if ((m = h.match(/^#\/edit\/([\w-]+)/))) return openEditor(m[1]);
+    if ((m = h.match(/^#\/view\/([\w-]+)/))) return openViewer(m[1]);
+    showLibrary();
+  }
+  window.addEventListener("hashchange", route);
+
+  function go(hash) {
+    if (location.hash === hash) route(); else location.hash = hash;
+  }
+
+  /* =====================================================
+     Library (My CVs)
+     ===================================================== */
+  var grid = $("cvGrid");
   var ICON = {
     up: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 10l4-4 4 4"/></svg>',
     down: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6l4 4 4-4"/></svg>',
-    del: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4l8 8M12 4l-8 8"/></svg>'
+    del: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4l8 8M12 4l-8 8"/></svg>',
+    copy: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="5" y="5" width="8.5" height="8.5" rx="1.5"/><path d="M10.5 5V3.5A1.5 1.5 0 0 0 9 2H3.5A1.5 1.5 0 0 0 2 3.5V9a1.5 1.5 0 0 0 1.5 1.5H5"/></svg>',
+    trash: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2.5 4h11M6 4V2.5h4V4M4 4l.7 9.5h6.6L12 4"/></svg>'
   };
 
+  function showLibrary() {
+    current = { id: null, data: null };
+    state = null;
+    document.title = "Folio CV Builder";
+    var list = Store.list();
+    $("libCount").textContent = list.length
+      ? list.length + (list.length === 1 ? " saved CV" : " saved CVs")
+      : "You haven't saved any CVs yet. Create one to get started.";
+
+    var h = '<button type="button" class="new-card" data-act="new"><span class="plus" aria-hidden="true">+</span><b>Create new CV</b><small>Pick a template and start filling in</small></button>';
+    list.forEach(function (r) {
+      var d = normalise(r.data) || emptyData();
+      var title = Store.displayTitle(r);
+      h += '<article class="cv-card">' +
+        '<a class="thumb-link" href="#/view/' + r.id + '" aria-label="View ' + esc(title) + '"><div class="thumb peek"><div class="thumb-inner">' + cvHTML(d) + "</div></div></a>" +
+        '<div class="card-body"><h2 title="' + esc(title) + '">' + esc(title) + "</h2>" +
+        '<p class="card-meta">' + tplName(d.template) + " · Edited " + ago(r.updatedAt) + "</p></div>" +
+        '<div class="card-acts">' +
+        '<a class="btn primary sm" href="#/edit/' + r.id + '">Edit</a>' +
+        '<a class="btn sm" href="#/view/' + r.id + '">View</a>' +
+        '<span class="spacer"></span>' +
+        '<button type="button" class="icon-btn" data-act="dup" data-id="' + r.id + '" aria-label="Duplicate ' + esc(title) + '" title="Duplicate">' + ICON.copy + "</button>" +
+        '<button type="button" class="icon-btn danger" data-act="del" data-id="' + r.id + '" aria-label="Delete ' + esc(title) + '" title="Delete">' + ICON.trash + "</button>" +
+        "</div></article>";
+    });
+    grid.innerHTML = h;
+    showView("library");
+    requestAnimationFrame(function () { fitThumbs(grid); });
+  }
+
+  async function deleteCv(id, after) {
+    var r = Store.get(id);
+    if (!r) return;
+    var ok = await confirmBox("Delete “" + Store.displayTitle(r) + "”?", "This removes the CV from this browser. It can't be undone.", "Delete CV");
+    if (!ok) return;
+    if (Store.remove(id)) { toast("Deleted " + Store.displayTitle(r)); after && after(); }
+    else toast("Couldn't delete the CV. Your browser storage may be blocked.");
+  }
+
+  function duplicateCv(id) {
+    var copy = Store.duplicate(id);
+    if (!copy) { toast("Your browser storage is full. Delete a CV or remove photos, then try again."); return null; }
+    toast("Created " + Store.displayTitle(copy));
+    return copy;
+  }
+
+  document.addEventListener("click", function (e) {
+    var b = e.target.closest("[data-act]");
+    if (!b) return;
+    var act = b.getAttribute("data-act"), id = b.getAttribute("data-id");
+    if (act === "new") openNewDialog();
+    else if (act === "dup") { if (duplicateCv(id)) showLibrary(); }
+    else if (act === "del") deleteCv(id, showLibrary);
+    else if (act === "dup-current" && current.id) { var c = duplicateCv(current.id); if (c) go("#/edit/" + c.id); }
+    else if (act === "delete-current" && current.id) deleteCv(current.id, function () { go("#/"); });
+    else if (act === "close-dialog") $("newDialog").close();
+  });
+
+  /* ---------- Create new ---------- */
+  var newDlg = $("newDialog"), newTpl = TEMPLATES[0].id;
+
+  function openNewDialog() {
+    $("newName").value = "";
+    var latest = Store.list()[0];
+    $("copyChoice").hidden = !latest;
+    if (latest) $("copyChoiceName").textContent = Store.displayTitle(latest);
+    newForm.querySelector('input[value="blank"]').checked = true;
+    renderNewTpls();
+    newDlg.showModal();
+    requestAnimationFrame(function () { fitThumbs(newDlg); });
+  }
+
+  function renderNewTpls() {
+    var sample = exampleData(), h = "";
+    TEMPLATES.forEach(function (tp) {
+      sample.template = tp.id;
+      h += '<button type="button" class="tpl" role="radio" aria-checked="' + (newTpl === tp.id) + '" data-newtpl="' + tp.id + '">' +
+        '<div class="thumb"><div class="thumb-inner">' + cvHTML(sample) + "</div></div>" +
+        '<span class="name">' + tp.name + '</span><span class="desc">' + tp.desc + "</span></button>";
+    });
+    $("newTpls").innerHTML = h;
+  }
+
+  $("newTpls").addEventListener("click", function (e) {
+    var b = e.target.closest("[data-newtpl]");
+    if (!b) return;
+    newTpl = b.getAttribute("data-newtpl");
+    Array.prototype.forEach.call(this.querySelectorAll("[data-newtpl]"), function (x) {
+      x.setAttribute("aria-checked", String(x === b));
+    });
+  });
+
+  var newForm = $("newForm");
+  newForm.addEventListener("submit", function (e) {
+    e.preventDefault();
+    var start = newForm.querySelector('input[name="newStart"]:checked').value;
+    var data;
+    if (start === "example") data = exampleData();
+    else if (start === "copy" && Store.list()[0]) { data = normalise(Store.list()[0].data); data.isExample = false; }
+    else data = emptyData();
+    data.template = newTpl;
+    var r = Store.create(data, $("newName").value.trim());
+    if (!r) { toast("Your browser storage is full. Delete a CV or remove photos, then try again."); return; }
+    newDlg.close();
+    openSections = { tpl: false, personal: true, summary: false, experience: false, education: false, skills: false };
+    go("#/edit/" + r.id);
+  });
+
+  /* ---------- Import a data file ---------- */
+  var jsonFile = $("jsonFile");
+  $("importJson").addEventListener("click", function () { jsonFile.value = ""; jsonFile.click(); });
+  jsonFile.addEventListener("change", function () {
+    var f = jsonFile.files && jsonFile.files[0];
+    if (!f) return;
+    var reader = new FileReader();
+    reader.onload = function () {
+      var raw, d;
+      try { raw = JSON.parse(reader.result); d = normalise(raw); } catch (e) { d = null; }
+      if (!d) { toast("That file isn't a Folio data file. Choose a .json saved with Download → Data file."); return; }
+      d.isExample = false;
+      var r = Store.create(d, (raw && raw.cvName) || "");
+      if (!r) { toast("Your browser storage is full. Delete a CV or remove photos, then try again."); return; }
+      toast("Imported " + Store.displayTitle(r));
+      go("#/edit/" + r.id);
+    };
+    reader.readAsText(f);
+  });
+
+  /* =====================================================
+     Viewer
+     ===================================================== */
+  var vPane = $("viewerPane"), vWrap = $("viewerWrap"), vSheet = $("viewerSheet"), vMeta = $("viewerMeta");
+
+  function openViewer(id) {
+    var r = Store.get(id);
+    if (!r) { toast("That CV no longer exists."); return go("#/"); }
+    current = { id: id, data: normalise(r.data) || emptyData() };
+    $("viewerTitle").textContent = Store.displayTitle(r);
+    $("viewerEdit").href = "#/edit/" + id;
+    document.title = Store.displayTitle(r) + " · Folio";
+    vSheet.innerHTML = cvHTML(current.data);
+    showView("viewer");
+    requestAnimationFrame(function () { layoutSheet(vPane, vWrap, vSheet, vMeta); });
+  }
+
+  /* =====================================================
+     Editor
+     ===================================================== */
+  var ed = $("editorInner"), editorEl = $("editor");
+  var pane = $("previewPane"), wrap = $("sheetWrap"), sheet = $("sheet"), meta = $("previewMeta");
+  var titleInput = $("cvTitle"), statusEl = $("saveStatus");
+  var openSections = { tpl: true, personal: true, summary: false, experience: false, education: false, skills: false };
+  var state = null;   // the data being edited (same object as current.data)
+
+  function openEditor(id) {
+    var r = Store.get(id);
+    if (!r) { toast("That CV no longer exists."); return go("#/"); }
+    current = { id: id, data: normalise(r.data) || emptyData() };
+    state = current.data;
+    titleInput.value = r.title || "";
+    titleInput.placeholder = state.personal.name || "Untitled CV";
+    document.title = Store.displayTitle(r) + " · Folio";
+    setStatus("Saved");
+    editorEl.scrollTop = 0;
+    showView("editor");
+    setView("edit");
+    renderEditor();
+    renderPreview();
+  }
+
+  /* ---------- Saving ---------- */
+  var saveTimer = null, dirty = { data: false, title: false };
+
+  function setStatus(s) { statusEl.textContent = s; statusEl.classList.toggle("warn", /^Not saved/.test(s)); }
+
+  function scheduleSave(kind) {
+    dirty[kind] = true;
+    setStatus("Saving…");
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(flushSave, 500);
+  }
+
+  function flushSave() {
+    clearTimeout(saveTimer);
+    if (!current.id || (!dirty.data && !dirty.title)) return true;
+    var patch = {};
+    if (dirty.data) patch.data = state;
+    if (dirty.title) patch.title = titleInput.value.trim();
+    var ok = Store.update(current.id, patch);
+    if (ok) { dirty = { data: false, title: false }; setStatus("Saved"); }
+    else setStatus("Not saved – storage full");
+    return ok;
+  }
+  window.addEventListener("beforeunload", flushSave);
+  window.addEventListener("pagehide", flushSave);
+
+  $("saveBtn").addEventListener("click", function () {
+    dirty.data = true; dirty.title = true;
+    if (flushSave()) toast("Saved to My CVs");
+    else toast("Your browser storage is full. Delete a CV or remove the photo, then save again.");
+  });
+
+  titleInput.addEventListener("input", function () { scheduleSave("title"); });
+
+  function update() {
+    scheduleSave("data");
+    titleInput.placeholder = state.personal.name || "Untitled CV";
+    cancelAnimationFrame(raf);
+    raf = requestAnimationFrame(renderPreview);
+    scheduleThumbs();
+  }
+  var raf = 0;
+
+  /* ---------- Form ---------- */
   function field(path, label, value, opts) {
     opts = opts || {};
     var id = "f-" + path.replace(/\./g, "-");
@@ -151,9 +429,9 @@
     var d = state, p = d.personal, h = "";
 
     if (d.isExample) {
-      h += '<div class="notice"><p>The form is filled with an <b>example CV</b> so you can see how the templates look. Replace it with your own details or start from a blank form.</p>' +
-        '<div class="row" id="blankRow"><button type="button" class="btn" data-action="ask-blank">Start blank</button>' +
-        '<button type="button" class="btn ghost" data-action="keep-example">Keep editing this</button></div></div>';
+      h += '<div class="notice"><p>This CV starts with <b>example content</b> so you can see how it looks. Replace it with your own details, or clear the form.</p>' +
+        '<div class="row" id="blankRow"><button type="button" class="btn" data-action="ask-blank">Clear form</button>' +
+        '<button type="button" class="btn ghost" data-action="keep-example">Hide this note</button></div></div>';
     }
 
     // 1. Template
@@ -164,7 +442,7 @@
         '<span class="name">' + tp.name + '</span><span class="desc">' + tp.desc + "</span></button>";
     });
     t += "</div>";
-    t += '<div class="field"><label>Accent colour</label><div class="swatches" role="radiogroup" aria-label="Accent colour">';
+    t += '<div class="field"><span class="label">Accent colour</span><div class="swatches" role="radiogroup" aria-label="Accent colour">';
     SWATCHES.forEach(function (c) {
       t += '<button type="button" class="swatch" role="radio" aria-label="' + c + '" aria-checked="' + (d.accent.toLowerCase() === c.toLowerCase()) +
         '" data-action="accent" data-c="' + c + '" style="background:' + c + '"></button>';
@@ -241,63 +519,20 @@
     renderThumbs();
   }
 
-  /* ---------- Thumbnails ---------- */
   function renderThumbs() {
     Array.prototype.forEach.call(ed.querySelectorAll("[data-thumb]"), function (el) {
       el.innerHTML = cvHTML(state, el.getAttribute("data-thumb"));
     });
-    fitThumbs();
-  }
-  function fitThumbs() {
-    Array.prototype.forEach.call(ed.querySelectorAll(".thumb"), function (th) {
-      th.firstChild.style.transform = "scale(" + th.clientWidth / PAGE_W + ")";
-    });
+    fitThumbs(ed);
   }
   var thumbTimer = null;
   function scheduleThumbs() { clearTimeout(thumbTimer); thumbTimer = setTimeout(renderThumbs, 350); }
 
-  /* ---------- Live preview ---------- */
-  var sheet = document.getElementById("sheet");
-  var wrap = document.getElementById("sheetWrap");
-  var pane = document.getElementById("previewPane");
-  var meta = document.getElementById("previewMeta");
-
   function renderPreview() {
     sheet.innerHTML = cvHTML(state);
-    layoutPreview();
-  }
-  function layoutPreview() {
-    var s = Math.min(1, (pane.clientWidth - 32) / PAGE_W);
-    if (s <= 0) return;
-    sheet.style.transform = "scale(" + s + ")";
-    var cv = sheet.querySelector(".cv");
-    if (!cv) return;
-    Array.prototype.forEach.call(sheet.querySelectorAll(".pb"), function (n) { n.remove(); });
-    var breaks = computeBreaks(cv, s);
-    var total = breaks[breaks.length - 1];
-    wrap.style.width = PAGE_W * s + "px";
-    wrap.style.height = total * s + "px";
-    for (var i = 1; i < breaks.length - 1; i++) {
-      var m = document.createElement("div");
-      m.className = "pb";
-      m.style.top = breaks[i] + "px";
-      m.innerHTML = "<span>Page " + (i + 1) + "</span>";
-      sheet.appendChild(m);
-    }
-    var pages = breaks.length - 1;
-    meta.innerHTML = "<span><strong>" + tplName(state.template) + "</strong> template · A4</span><span>" +
-      pages + (pages === 1 ? " page" : " pages") + " · " + Math.round(s * 100) + "% zoom</span>";
+    layoutSheet(pane, wrap, sheet, meta);
   }
 
-  var raf = 0;
-  function update() {
-    saveDraft();
-    cancelAnimationFrame(raf);
-    raf = requestAnimationFrame(renderPreview);
-    scheduleThumbs();
-  }
-
-  /* ---------- Form events ---------- */
   function setPath(path, value) {
     var parts = path.split("."), o = state;
     for (var i = 0; i < parts.length - 1; i++) o = o[parts[i]];
@@ -341,7 +576,7 @@
     var d = e.target;
     if (d.classList && d.classList.contains("sec")) {
       openSections[d.getAttribute("data-sec")] = d.open;
-      if (d.getAttribute("data-sec") === "tpl" && d.open) fitThumbs();
+      if (d.getAttribute("data-sec") === "tpl" && d.open) fitThumbs(ed);
     }
   }, true);
 
@@ -358,7 +593,7 @@
         break;
       case "accent":
         state.accent = b.getAttribute("data-c");
-        document.getElementById("accentCustom").value = state.accent;
+        $("accentCustom").value = state.accent;
         refreshSwatches(); update();
         break;
       case "add":
@@ -382,14 +617,14 @@
         renderEditor(); update();
         break;
       case "photo":
-        document.getElementById("photoInput").click();
+        $("photoInput").click();
         break;
       case "photo-remove":
         state.personal.photo = "";
         renderEditor(); update();
         break;
       case "ask-blank":
-        document.getElementById("blankRow").innerHTML = '<span style="font-weight:600">Clear the whole form?</span>' +
+        $("blankRow").innerHTML = '<span style="font-weight:600">Clear the whole form?</span>' +
           '<button type="button" class="btn danger" data-action="do-blank">Yes, clear it</button>' +
           '<button type="button" class="btn ghost" data-action="cancel-blank">Cancel</button>';
         break;
@@ -397,10 +632,12 @@
         renderEditor();
         break;
       case "do-blank":
-        state = Object.assign(emptyState(), { template: state.template, accent: state.accent });
+        var keep = { template: state.template, accent: state.accent };
+        Object.keys(state).forEach(function (k) { delete state[k]; });
+        Object.assign(state, emptyData(), keep);
         openSections.personal = true;
         renderEditor(); update();
-        var first = document.getElementById("f-personal-name");
+        var first = $("f-personal-name");
         if (first) first.focus();
         break;
       case "keep-example":
@@ -434,165 +671,66 @@
     r.readAsDataURL(file);
   }
 
-  /* ---------- Exports ---------- */
-  function downloadFile(filename, data, type) {
-    var blob = data instanceof Blob ? data : new Blob([data], { type: type || "application/octet-stream" });
-    var url = URL.createObjectURL(blob);
-    var a = document.createElement("a");
-    a.href = url; a.download = filename;
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
-    toast("Downloaded " + filename);
-  }
-
-  // PDF: renders the CV to an image per A4 page using html2canvas + jsPDF
-  async function buildPdf() {
-    if (!window.html2canvas || !window.jspdf) throw new Error("The PDF tools didn't load. Check your internet connection and reload the page.");
-    if (document.fonts && document.fonts.ready) await document.fonts.ready;
-    var host = document.createElement("div");
-    host.className = "export-host";
-    host.innerHTML = cvHTML(state);
-    document.body.appendChild(host);
-    try {
-      var cv = host.firstChild;
-      var breaks = computeBreaks(cv, 1);
-      var SCALE = 2;
-      var canvas = await window.html2canvas(cv, {
-        scale: SCALE, backgroundColor: "#ffffff", useCORS: true, logging: false, width: PAGE_W, windowWidth: PAGE_W
-      });
-      var pdf = new window.jspdf.jsPDF({ orientation: "p", unit: "mm", format: "a4", compress: true });
-      var pw = PAGE_W * SCALE, ph = PAGE_H * SCALE;
-      for (var i = 0; i < breaks.length - 1; i++) {
-        var y0 = Math.round(breaks[i] * SCALE);
-        var y1 = Math.min(Math.round(breaks[i + 1] * SCALE), canvas.height);
-        var top = i === 0 ? 0 : MARGIN * SCALE;
-        var h = Math.min(y1 - y0, ph - top);
-        var page = document.createElement("canvas");
-        page.width = pw; page.height = ph;
-        var ctx = page.getContext("2d");
-        ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, pw, ph);
-        // Stretch the first and last pixel rows into the margins so sidebars
-        // and coloured backgrounds run edge to edge on every page
-        if (top > 0) ctx.drawImage(canvas, 0, y0, pw, 1, 0, 0, pw, top);
-        ctx.drawImage(canvas, 0, y0, pw, h, 0, top, pw, h);
-        var lastRow = Math.min(canvas.height - 1, i === breaks.length - 2 ? canvas.height - 1 : y0 + h - 1);
-        if (top + h < ph) ctx.drawImage(canvas, 0, lastRow, pw, 1, 0, top + h, pw, ph - top - h);
-        if (i > 0) pdf.addPage();
-        pdf.addImage(page.toDataURL("image/jpeg", 0.94), "JPEG", 0, 0, 210, 297);
-      }
-      return pdf.output("blob");
-    } finally {
-      host.remove();
-    }
-  }
-
-  var pdfBtn = document.getElementById("dlPdf");
-  pdfBtn.addEventListener("click", async function () {
-    var label = pdfBtn.textContent;
-    pdfBtn.disabled = true; pdfBtn.textContent = "Preparing PDF…";
-    try {
-      downloadFile(slug(state.personal.name) + ".pdf", await buildPdf());
-    } catch (err) {
-      toast(err && err.message ? err.message : "The PDF couldn't be created.");
-    } finally {
-      pdfBtn.disabled = false; pdfBtn.textContent = label;
-    }
-  });
-
-  // Print: the browser's own print dialog gives a PDF with selectable text
-  var printHost = document.getElementById("printHost");
-  document.getElementById("printPdf").addEventListener("click", function () {
-    printHost.innerHTML = cvHTML(state);
-    var title = document.title;
-    document.title = slug(state.personal.name);   // suggested PDF filename
-    window.print();
-    document.title = title;
-  });
-  window.addEventListener("afterprint", function () { printHost.innerHTML = ""; });
-
-  // Read the template CSS so the exported HTML file is self-contained
-  async function templateCss() {
-    var link = document.getElementById("cv-styles");
-    try {
-      var rules = link.sheet && link.sheet.cssRules;
-      if (rules && rules.length) return Array.prototype.map.call(rules, function (r) { return r.cssText; }).join("\n");
-    } catch (e) { /* some browsers block this for file:// pages */ }
-    var res = await fetch(link.href);
-    if (!res.ok) throw new Error();
-    return await res.text();
-  }
-
-  document.getElementById("dlHtml").addEventListener("click", async function () {
-    var css;
-    try { css = await templateCss(); }
-    catch (e) { toast("Couldn't read the template styles. Open the app through a web server (see README) and try again."); return; }
-    var name = state.personal.name || "CV";
-    var doc = '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
-      "<title>" + esc(name) + " – CV</title>" +
-      '<link rel="stylesheet" href="' + document.getElementById("font-link").href + '">' +
-      "<style>body{margin:0;background:#e6e8ee;display:flex;justify-content:center;padding:24px 0}" +
-      "@page{size:A4;margin:12mm 0}@page :first{margin-top:0}" +
-      "@media print{body{background:#fff;padding:0;display:block}.cv{box-shadow:none;min-height:0}}" +
-      ".cv{box-shadow:0 8px 30px rgba(0,0,0,.15)}\n" + css + "</style></head><body>" +
-      cvHTML(state) + "</body></html>";
-    downloadFile(slug(name) + ".html", doc, "text/html");
-  });
-
-  // Save / load data as JSON
-  document.getElementById("saveJson").addEventListener("click", function () {
-    var copy = JSON.parse(JSON.stringify(state));
-    delete copy.isExample;
-    downloadFile(slug(state.personal.name) + "-data.json", JSON.stringify(copy, null, 2), "application/json");
-  });
-  var jsonFile = document.getElementById("jsonFile");
-  document.getElementById("loadJson").addEventListener("click", function () { jsonFile.value = ""; jsonFile.click(); });
-  jsonFile.addEventListener("change", function () {
-    var f = jsonFile.files && jsonFile.files[0];
-    if (!f) return;
-    var r = new FileReader();
-    r.onload = function () {
-      try {
-        var d = normalise(JSON.parse(r.result));
-        if (!d) throw new Error();
-        d.isExample = false;
-        state = d;
-        renderEditor(); update();
-        toast("Loaded details from " + f.name);
-      } catch (e) {
-        toast("That file isn't a Folio data file. Choose a .json saved with Save data.");
-      }
-    };
-    r.readAsText(f);
-  });
-
   /* ---------- Phone view switch ---------- */
-  var app = document.getElementById("app");
   function setView(v) {
-    app.setAttribute("data-view", v);
-    document.getElementById("viewEdit").setAttribute("aria-pressed", String(v === "edit"));
-    document.getElementById("viewPreview").setAttribute("aria-pressed", String(v === "preview"));
-    requestAnimationFrame(v === "preview" ? layoutPreview : fitThumbs);
+    views.editor.setAttribute("data-view", v);
+    $("viewEdit").setAttribute("aria-pressed", String(v === "edit"));
+    $("viewPreview").setAttribute("aria-pressed", String(v === "preview"));
+    requestAnimationFrame(function () {
+      if (v === "preview") layoutSheet(pane, wrap, sheet, meta); else fitThumbs(ed);
+    });
   }
-  document.getElementById("viewEdit").addEventListener("click", function () { setView("edit"); });
-  document.getElementById("viewPreview").addEventListener("click", function () { setView("preview"); });
+  $("viewEdit").addEventListener("click", function () { setView("edit"); });
+  $("viewPreview").addEventListener("click", function () { setView("preview"); });
 
-  /* ---------- Toast ---------- */
-  var toastEl = document.getElementById("toast"), toastT = null;
-  function toast(msg) {
-    toastEl.textContent = msg;
-    toastEl.hidden = false;
-    clearTimeout(toastT);
-    toastT = setTimeout(function () { toastEl.hidden = true; }, 3600);
-  }
+  /* =====================================================
+     Downloads (editor and viewer)
+     ===================================================== */
+  document.addEventListener("click", async function (e) {
+    var b = e.target.closest("[data-export]");
+    if (!b || !current.data) return;
+    closeMenus();
+    var kind = b.getAttribute("data-export");
+    var r = Store.get(current.id);
+    try {
+      if (kind === "print") { X.print(current.data); return; }
+      if (kind === "pdf") toast("Preparing PDF…");
+      var file = kind === "pdf" ? await X.pdf(current.data)
+        : kind === "html" ? await X.html(current.data)
+        : X.json(current.data, r ? r.title : "");
+      X.download(file);
+      toast("Downloaded " + file.filename);
+    } catch (err) {
+      toast(err && err.message ? err.message : "The file couldn't be created.");
+    }
+  });
 
-  /* ---------- Boot ---------- */
-  renderEditor();
-  renderPreview();
+  /* =====================================================
+     Boot
+     ===================================================== */
   if (window.ResizeObserver) {
-    new ResizeObserver(layoutPreview).observe(pane);
-    new ResizeObserver(fitThumbs).observe(editorEl);
+    new ResizeObserver(function () { if (!views.editor.hidden && state) layoutSheet(pane, wrap, sheet, meta); }).observe(pane);
+    new ResizeObserver(function () { fitThumbs(ed); }).observe(editorEl);
+    new ResizeObserver(function () { if (!views.viewer.hidden) layoutSheet(vPane, vWrap, vSheet, vMeta); }).observe(vPane);
+    new ResizeObserver(function () { if (!views.library.hidden) fitThumbs(grid); }).observe(grid);
   } else {
-    window.addEventListener("resize", function () { layoutPreview(); fitThumbs(); });
+    window.addEventListener("resize", function () { route(); });
   }
-  if (document.fonts && document.fonts.ready) document.fonts.ready.then(layoutPreview);
+  if (document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(function () {
+      if (!views.editor.hidden && state) layoutSheet(pane, wrap, sheet, meta);
+      if (!views.viewer.hidden) layoutSheet(vPane, vWrap, vSheet, vMeta);
+    });
+  }
+
+  // First visit: give people one example CV to explore
+  try {
+    if (!localStorage.getItem("folio-seeded") && !Store.list().length) {
+      var ex = exampleData();
+      Store.create(ex, "Example CV");
+      localStorage.setItem("folio-seeded", "1");
+    }
+  } catch (e) { /* storage blocked – the app still works for this visit */ }
+
+  route();
 })();

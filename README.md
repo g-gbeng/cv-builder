@@ -4,6 +4,13 @@ A CV builder that runs entirely in the browser. Pick a template, fill in your de
 
 ## Features
 
+- **My CVs:** a home screen listing every saved CV with a preview, its template and when it was last edited
+  - **Create new:** name the CV, pick a template, and start from a blank form, example content, or a copy of your latest CV
+  - **View:** see the full CV read-only and download it
+  - **Edit:** changes save automatically, and the **Save** button saves straight away
+  - **Duplicate:** use an existing CV as the starting point for a new one, for example to tailor it for each job
+  - **Delete:** asks you to confirm first
+  - **Import data file:** add a CV from a `.json` backup
 - **4 templates:** Meridian (classic serif), Ledger (colour sidebar with photo), Signal (bold modern), Plain (ATS-friendly)
 - **Accent colour:** pick a preset or any custom colour
 - **Sections:** personal details, photo, profile summary, experience, education, skills, languages, certifications
@@ -13,8 +20,7 @@ A CV builder that runs entirely in the browser. Pick a template, fill in your de
   - **Download PDF**: one click (image-based PDF)
   - **Print**: opens the browser's print dialog. Choose *Save as PDF* to get a PDF with selectable text, which is best for job portals.
   - **Download HTML**: a standalone copy of your CV
-  - **Save data / Load data**: keep your details in a `.json` file and edit them later
-- **Autosave:** your draft is saved in the browser automatically
+  - **Data file (.json)**: a backup you can import on another device or browser
 - **Works on phones:** Edit/Preview toggle on small screens, plus dark mode for the editor
 
 ## Project structure
@@ -27,9 +33,19 @@ cv-builder/
 │   └── templates.css   CV template styles (one block per template)
 ├── js/
 │   ├── templates.js    Template definitions and HTML renderers
-│   └── app.js          State, form, live preview, exports
+│   ├── store.js        Saved CVs (create, read, update, delete) in localStorage
+│   ├── export.js       Page breaks, PDF, print, HTML and JSON exports
+│   └── app.js          Screens: My CVs, editor, viewer, create-new dialog
 └── README.md
 ```
+
+The app has three screens, each with its own URL, so the browser's back button works:
+
+| URL           | Screen                     |
+|---------------|----------------------------|
+| `#/`          | My CVs                     |
+| `#/edit/<id>` | Editor with live preview   |
+| `#/view/<id>` | Read-only view of one CV   |
 
 ## Run it locally
 
@@ -77,6 +93,11 @@ Add the `keep` class to any block that shouldn't be split across pages.
 - [html2canvas 1.4.1](https://html2canvas.hertzen.com/) and [jsPDF 2.5.1](https://github.com/parallax/jsPDF) for the PDF download
 - Google Fonts: Bricolage Grotesque, Figtree, Source Serif 4, Manrope, IBM Plex Sans
 
-## Privacy
+## Where CVs are stored
 
-All data stays in the user's browser (localStorage). Nothing is sent to a server.
+CVs are saved in the user's browser (`localStorage`), and nothing is sent to a server. This means:
+
+- Each person's CVs stay on their own device and browser. Clearing browser data removes them, so the Data file download is the backup.
+- Browsers allow about 5 MB per site. That's room for many CVs, but photos take up the most space. If storage fills up, the app says so instead of silently losing changes.
+
+To add user accounts and sync across devices later, swap the inside of `js/store.js` for calls to a backend (for example Firebase, Supabase or your own API). The rest of the app only uses its `create`, `get`, `list`, `update`, `remove` and `duplicate` methods.

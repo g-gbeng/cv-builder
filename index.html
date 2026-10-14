@@ -15,36 +15,149 @@
   <link id="cv-styles" rel="stylesheet" href="css/templates.css">
 </head>
 <body>
-  <div class="app" id="app" data-view="edit">
-    <header class="bar">
-      <div class="brand"><b>Folio</b><span>CV builder</span></div>
-      <div class="switch" role="group" aria-label="View">
-        <button type="button" id="viewEdit" aria-pressed="true">Edit</button>
-        <button type="button" id="viewPreview" aria-pressed="false">Preview</button>
-      </div>
-      <div class="actions">
-        <button type="button" class="btn ghost" id="saveJson" title="Save your details to a file you can load later">Save data</button>
-        <button type="button" class="btn ghost" id="loadJson" title="Load details saved earlier">Load data</button>
-        <input type="file" id="jsonFile" accept=".json,application/json" hidden>
-        <button type="button" class="btn" id="dlHtml">Download HTML</button>
-        <button type="button" class="btn" id="printPdf" title="Opens your browser's print dialog. Choose 'Save as PDF' for a PDF with selectable text.">Print</button>
-        <button type="button" class="btn primary" id="dlPdf">Download PDF</button>
-      </div>
-    </header>
+  <div class="app-root">
 
-    <div class="split">
-      <section class="editor" id="editor" aria-label="CV details">
-        <div class="editor-inner" id="editorInner"></div>
-      </section>
-      <section class="preview" id="previewPane" aria-label="CV preview">
-        <div class="preview-inner">
-          <div class="preview-meta" id="previewMeta"></div>
-          <div class="sheet-wrap" id="sheetWrap"><div class="sheet" id="sheet"></div></div>
+    <!-- ===================== My CVs (library) ===================== -->
+    <section class="view library" id="libraryView" hidden>
+      <header class="bar">
+        <div class="brand"><b>Folio</b><span>CV builder</span></div>
+        <div class="actions">
+          <button type="button" class="btn ghost" id="importJson" title="Add a CV from a .json data file saved earlier">Import data file</button>
+          <button type="button" class="btn primary" data-act="new">+ Create new</button>
         </div>
-      </section>
-    </div>
+      </header>
+      <main class="lib-main">
+        <div class="lib-head">
+          <h1>My CVs</h1>
+          <p id="libCount"></p>
+        </div>
+        <div class="cv-grid" id="cvGrid"></div>
+        <p class="lib-foot">Your CVs are saved in this browser only. To move them to another device, open a CV and choose Download → Data file, then import it there.</p>
+      </main>
+    </section>
+
+    <!-- ===================== Editor ===================== -->
+    <section class="view app" id="editorView" data-view="edit" hidden>
+      <header class="bar">
+        <a class="btn ghost back" href="#/" title="Back to My CVs">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M10 3L5 8l5 5"/></svg>
+          <span>My CVs</span>
+        </a>
+        <input class="title-input" id="cvTitle" type="text" aria-label="CV name" placeholder="Untitled CV" autocomplete="off">
+        <span class="save-status" id="saveStatus" role="status" aria-live="polite"></span>
+        <div class="switch" role="group" aria-label="View">
+          <button type="button" id="viewEdit" aria-pressed="true">Edit</button>
+          <button type="button" id="viewPreview" aria-pressed="false">Preview</button>
+        </div>
+        <div class="actions">
+          <details class="menu">
+            <summary class="btn">Download</summary>
+            <div class="menu-list" role="menu">
+              <button type="button" role="menuitem" data-export="pdf"><b>PDF</b><small>One-click download</small></button>
+              <button type="button" role="menuitem" data-export="print"><b>Print / Save as PDF</b><small>Selectable text, best for job sites</small></button>
+              <button type="button" role="menuitem" data-export="html"><b>HTML page</b><small>A standalone web copy</small></button>
+              <button type="button" role="menuitem" data-export="json"><b>Data file (.json)</b><small>Backup you can import later</small></button>
+            </div>
+          </details>
+          <button type="button" class="btn primary" id="saveBtn">Save</button>
+        </div>
+      </header>
+
+      <div class="split">
+        <section class="editor" id="editor" aria-label="CV details">
+          <div class="editor-inner" id="editorInner"></div>
+        </section>
+        <section class="preview" id="previewPane" aria-label="CV preview">
+          <div class="preview-inner">
+            <div class="preview-meta" id="previewMeta"></div>
+            <div class="sheet-wrap" id="sheetWrap"><div class="sheet" id="sheet"></div></div>
+          </div>
+        </section>
+      </div>
+    </section>
+
+    <!-- ===================== Viewer ===================== -->
+    <section class="view viewer" id="viewerView" hidden>
+      <header class="bar">
+        <a class="btn ghost back" href="#/" title="Back to My CVs">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M10 3L5 8l5 5"/></svg>
+          <span>My CVs</span>
+        </a>
+        <h1 class="viewer-title" id="viewerTitle"></h1>
+        <div class="actions">
+          <button type="button" class="btn ghost danger" data-act="delete-current">Delete</button>
+          <button type="button" class="btn" data-act="dup-current">Duplicate</button>
+          <details class="menu">
+            <summary class="btn">Download</summary>
+            <div class="menu-list" role="menu">
+              <button type="button" role="menuitem" data-export="pdf"><b>PDF</b><small>One-click download</small></button>
+              <button type="button" role="menuitem" data-export="print"><b>Print / Save as PDF</b><small>Selectable text, best for job sites</small></button>
+              <button type="button" role="menuitem" data-export="html"><b>HTML page</b><small>A standalone web copy</small></button>
+              <button type="button" role="menuitem" data-export="json"><b>Data file (.json)</b><small>Backup you can import later</small></button>
+            </div>
+          </details>
+          <a class="btn primary" id="viewerEdit" href="#/">Edit</a>
+        </div>
+      </header>
+      <div class="viewer-pane" id="viewerPane">
+        <div class="preview-inner">
+          <div class="preview-meta" id="viewerMeta"></div>
+          <div class="sheet-wrap" id="viewerWrap"><div class="sheet" id="viewerSheet"></div></div>
+        </div>
+      </div>
+    </section>
   </div>
 
+  <!-- ===================== Create new dialog ===================== -->
+  <dialog id="newDialog" aria-labelledby="newTitle">
+    <form method="dialog" id="newForm">
+      <div class="dlg-head">
+        <h2 id="newTitle">Create a new CV</h2>
+        <button type="button" class="icon-btn" data-act="close-dialog" aria-label="Close">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4l8 8M12 4l-8 8"/></svg>
+        </button>
+      </div>
+      <div class="dlg-body">
+        <div class="field">
+          <label for="newName">CV name</label>
+          <input type="text" id="newName" placeholder="e.g. Product Designer – Brightpay application" autocomplete="off">
+          <span class="help">Only you see this. It helps you tell your CVs apart.</span>
+        </div>
+        <div class="field">
+          <span class="label">Template</span>
+          <div class="tpls" id="newTpls" role="radiogroup" aria-label="Template"></div>
+        </div>
+        <div class="field">
+          <span class="label">Start with</span>
+          <div class="choices">
+            <label class="choice"><input type="radio" name="newStart" value="blank" checked><span><b>Blank form</b><small>Fill in your own details</small></span></label>
+            <label class="choice"><input type="radio" name="newStart" value="example"><span><b>Example content</b><small>Edit a filled-in sample</small></span></label>
+            <label class="choice" id="copyChoice" hidden><input type="radio" name="newStart" value="copy"><span><b>Copy of my latest CV</b><small id="copyChoiceName"></small></span></label>
+          </div>
+        </div>
+      </div>
+      <div class="dlg-foot">
+        <button type="button" class="btn ghost" data-act="close-dialog">Cancel</button>
+        <button type="submit" class="btn primary">Create CV</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- ===================== Confirm dialog ===================== -->
+  <dialog id="confirmDialog" class="small" aria-labelledby="confirmTitle">
+    <form method="dialog">
+      <div class="dlg-body">
+        <h2 id="confirmTitle"></h2>
+        <p id="confirmMsg"></p>
+      </div>
+      <div class="dlg-foot">
+        <button type="submit" class="btn ghost" value="cancel">Cancel</button>
+        <button type="submit" class="btn danger-solid" value="ok" id="confirmOk">Delete</button>
+      </div>
+    </form>
+  </dialog>
+
+  <input type="file" id="jsonFile" accept=".json,application/json" hidden>
   <!-- Holds the CV while the browser's print dialog is open -->
   <div id="printHost" aria-hidden="true"></div>
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
@@ -54,6 +167,8 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" defer></script>
 
   <script src="js/templates.js" defer></script>
+  <script src="js/store.js" defer></script>
+  <script src="js/export.js" defer></script>
   <script src="js/app.js" defer></script>
 </body>
 </html>
