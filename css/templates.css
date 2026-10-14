@@ -1,0 +1,124 @@
+/* =========================================================
+   Folio CV Builder – CV template styles
+   The CV is paper: it always renders on white, so these
+   colours are fixed and do not follow the app's dark mode.
+   Each template is scoped by a .t-<id> class on .cv.
+   ========================================================= */
+
+.cv {
+  width: 794px;            /* A4 at 96dpi */
+  min-height: 1123px;
+  background: #fff;
+  color: #1d1f24;
+  position: relative;
+  overflow-wrap: anywhere;
+  --cv-accent: #2F49D1;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+.cv * { box-sizing: border-box; }
+.cv h1, .cv h2, .cv h3, .cv p, .cv ul { margin: 0; }
+.cv ul { padding-left: 16px; }
+.cv li { margin: 2px 0; }
+
+/* Keep entries together across printed pages */
+.cv .keep { break-inside: avoid; page-break-inside: avoid; }
+.cv h2 { break-after: avoid; page-break-after: avoid; }
+
+/* ---------- Meridian: classic serif, centred masthead ---------- */
+.t-meridian { font-family: "Source Serif 4", Georgia, serif; font-size: 13px; line-height: 1.5; padding: 60px 64px; }
+.t-meridian header { text-align: center; padding-bottom: 18px; border-bottom: 1.5px solid var(--cv-accent); margin-bottom: 20px; }
+.t-meridian h1 { font-size: 34px; font-weight: 600; letter-spacing: 0.01em; line-height: 1.15; }
+.t-meridian .role { font-style: italic; font-size: 15px; color: #4a4d55; margin-top: 4px; }
+.t-meridian .contact { margin-top: 10px; font-size: 12px; color: #4a4d55; }
+.t-meridian .contact span + span::before { content: "·"; margin: 0 8px; color: var(--cv-accent); }
+.t-meridian section { margin-bottom: 18px; }
+.t-meridian h2 {
+  font-size: 12px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--cv-accent); margin-bottom: 8px; display: flex; align-items: center; gap: 10px;
+}
+.t-meridian h2::after { content: ""; flex: 1; height: 1px; background: #d9dbe0; }
+.t-meridian .entry { margin-bottom: 12px; }
+.t-meridian .row { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+.t-meridian .row b { font-weight: 600; font-size: 14px; }
+.t-meridian .when { font-size: 12px; color: #5d6068; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.t-meridian .sub { font-style: italic; color: #4a4d55; }
+.t-meridian ul { margin-top: 4px; }
+.t-meridian .skills { columns: 3; column-gap: 20px; padding-left: 16px; }
+.t-meridian .inline-list span + span::before { content: "·"; margin: 0 7px; color: var(--cv-accent); }
+
+/* ---------- Ledger: coloured sidebar, two columns ---------- */
+.t-ledger {
+  font-family: "Manrope", "Segoe UI", sans-serif; font-size: 12.5px; line-height: 1.5;
+  display: grid; grid-template-columns: 262px 1fr;
+}
+.t-ledger aside { background: var(--cv-accent); color: #fff; padding: 52px 28px; display: flex; flex-direction: column; gap: 24px; }
+.t-ledger .avatar {
+  width: 128px; height: 128px; border-radius: 50%;
+  background-color: rgba(255,255,255,.18); background-size: cover; background-position: center;
+  display: grid; place-items: center; font-size: 40px; font-weight: 700; letter-spacing: .02em;
+  border: 3px solid rgba(255,255,255,.55);
+}
+.t-ledger aside h2 {
+  font-size: 11px; font-weight: 800; letter-spacing: .18em; text-transform: uppercase; opacity: .85;
+  margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid rgba(255,255,255,.35);
+}
+.t-ledger aside .ci { display: flex; flex-direction: column; margin-bottom: 7px; }
+.t-ledger aside .ci small { font-size: 10px; text-transform: uppercase; letter-spacing: .1em; opacity: .7; }
+.t-ledger aside ul { list-style: none; padding: 0; }
+.t-ledger aside li { margin: 0 0 5px; }
+.t-ledger main { padding: 52px 44px 52px 38px; }
+.t-ledger h1 { font-size: 34px; font-weight: 800; letter-spacing: -0.02em; line-height: 1.1; color: #14161b; }
+.t-ledger .role { font-size: 15px; font-weight: 600; color: var(--cv-accent); margin-top: 6px; }
+.t-ledger main section { margin-top: 24px; }
+.t-ledger main h2 {
+  font-size: 12px; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; color: #14161b;
+  margin-bottom: 10px; display: flex; align-items: center; gap: 8px;
+}
+.t-ledger main h2::before { content: ""; width: 10px; height: 10px; background: var(--cv-accent); border-radius: 2px; }
+.t-ledger .entry { margin-bottom: 14px; }
+.t-ledger .entry b { font-size: 13.5px; font-weight: 700; color: #14161b; }
+.t-ledger .meta { color: #5c6170; font-size: 12px; display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-top: 1px; }
+.t-ledger .meta .when { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--cv-accent); }
+.t-ledger main ul { margin-top: 5px; }
+
+/* ---------- Signal: modern, dates in a gutter ---------- */
+.t-signal { font-family: "IBM Plex Sans", "Segoe UI", sans-serif; font-size: 12.5px; line-height: 1.5; padding: 56px 60px; }
+.t-signal header {
+  display: grid; grid-template-columns: 1fr auto; gap: 20px; align-items: end;
+  padding-bottom: 22px; border-bottom: 4px solid var(--cv-accent);
+}
+.t-signal h1 {
+  font-family: "Bricolage Grotesque", "Segoe UI", sans-serif;
+  font-size: 44px; font-weight: 800; letter-spacing: -0.035em; line-height: 0.98; color: #101216;
+}
+.t-signal .role { font-size: 15px; font-weight: 600; color: var(--cv-accent); margin-top: 8px; }
+.t-signal .contact { text-align: right; font-size: 11.5px; color: #474b55; display: flex; flex-direction: column; gap: 1px; }
+.t-signal section { display: grid; grid-template-columns: 132px 1fr; gap: 20px; padding: 18px 0; border-bottom: 1px solid #e3e5ea; }
+.t-signal section:last-child { border-bottom: 0; }
+.t-signal h2 { font-family: "Bricolage Grotesque", "Segoe UI", sans-serif; font-size: 13px; font-weight: 700; letter-spacing: .02em; color: #101216; }
+.t-signal .entry { display: grid; grid-template-columns: 1fr auto; column-gap: 14px; margin-bottom: 13px; }
+.t-signal .entry:last-child { margin-bottom: 0; }
+.t-signal .entry b { font-weight: 600; font-size: 13.5px; color: #101216; }
+.t-signal .entry .org { color: #474b55; }
+.t-signal .entry .when { font-size: 11.5px; color: #5d6170; font-variant-numeric: tabular-nums; white-space: nowrap; text-align: right; }
+.t-signal .entry ul, .t-signal .entry p.d { grid-column: 1 / -1; margin-top: 4px; }
+.t-signal .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.t-signal .chips span { border: 1px solid var(--cv-accent); color: #23262d; padding: 2px 9px; border-radius: 99px; font-size: 11.5px; }
+
+/* ---------- Plain: ATS-friendly single column ---------- */
+.t-plain { font-family: "IBM Plex Sans", Arial, sans-serif; font-size: 13px; line-height: 1.5; padding: 56px 64px; color: #111; }
+.t-plain h1 { font-size: 26px; font-weight: 700; color: var(--cv-accent); line-height: 1.2; }
+.t-plain .role { font-size: 14px; font-weight: 500; margin-top: 2px; }
+.t-plain .contact { margin-top: 6px; font-size: 12px; color: #333; }
+.t-plain .contact span + span::before { content: "|"; margin: 0 8px; color: #999; }
+.t-plain section { margin-top: 18px; }
+.t-plain h2 {
+  font-size: 12.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+  border-bottom: 1px solid #111; padding-bottom: 3px; margin-bottom: 8px;
+}
+.t-plain .entry { margin-bottom: 10px; }
+.t-plain .row { display: flex; justify-content: space-between; gap: 12px; }
+.t-plain .row b { font-weight: 600; }
+.t-plain .when { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.t-plain ul { margin-top: 3px; }
